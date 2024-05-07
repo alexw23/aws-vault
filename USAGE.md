@@ -913,21 +913,20 @@ To build the app, run `make app` you can then use the binary located in `./aws-v
 ```shell
 $ make app
 (build details omitted)
-echo "Run at ./aws-vault.app/Contents/MacOS/aws-vault"
-Run at ./aws-vault.app/Contents/MacOS/aws-vault
+
 $ ./aws-vault.app/Contents/MacOS/aws-vault --backend=dp-keychain ls
 Profile                    Credentials              Sessions                                                      
 =======                    ===========              ========                                                      
 default                    -                        -       
 ```
 
-These two functions could be come cumbersome whilst developing so you could merge them together
+These two functions could become cumbersome whilst developing so you could merge them together like so:
 
 ```shell
 $ make app && ./aws-vault.app/Contents/MacOS/aws-vault --backend=dp-keychain ls
+
 (build details omitted)
-echo "Run at ./aws-vault.app/Contents/MacOS/aws-vault"
-Run at ./aws-vault.app/Contents/MacOS/aws-vault
+
 Profile                    Credentials              Sessions                                                      
 =======                    ===========              ========                                                      
 default                    -                        -      
