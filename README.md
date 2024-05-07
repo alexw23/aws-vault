@@ -33,7 +33,9 @@ Config, usage, tips and tricks are available in the [USAGE.md](./USAGE.md) file.
 
 The supported vaulting backends are:
 
+
 * [macOS Keychain](https://support.apple.com/en-au/guide/keychain-access/welcome/mac)
+* (Beta) [macOS Data Protection Keychain](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains#API-differences:~:text=File%2Dbased%20keychain-,Data%20protection%20keychain,-The%20file%2Dbased) (Touch ID, Apple Watch, etc)
 * [Windows Credential Manager](https://support.microsoft.com/en-au/help/4026814/windows-accessing-credential-manager)
 * Secret Service ([Gnome Keyring](https://wiki.gnome.org/Projects/GnomeKeyring), [KWallet](https://kde.org/applications/system/org.kde.kwalletmanager5))
 * [KWallet](https://kde.org/applications/system/org.kde.kwalletmanager5)
@@ -160,6 +162,12 @@ If you are developing or compiling the aws-vault binary yourself, you can [gener
 $ go build .
 $ codesign --sign <Name of certificate created above> ./aws-vault
 ```
+
+### Data Protection Keychain (macOS)
+
+If you wish to develop/test using the Data Protection Keychain (`dp-keychain`) (i.e. Touch ID) you will need to bundle and sign the app (each time you make changes). You cannot use this directly, even from a signed binary. It must exist in the app bundle as it needs the `embedded.provisionprofile` to access the keychain.
+
+For more information about setting up a test environment for the Data Protection Keychain [Read more here](./USAGE.md#developing-with-the-data-protection-keychain-ie-touch-id).
 
 ## References and Inspiration
 

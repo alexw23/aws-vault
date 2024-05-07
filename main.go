@@ -24,6 +24,7 @@ func main() {
 	cli.ConfigureClearCommand(app, a)
 	cli.ConfigureLoginCommand(app, a)
 	cli.ConfigureProxyCommand(app)
+	cli.ConfigureCopyCommand(app, a)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }

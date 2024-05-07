@@ -16,11 +16,20 @@
     - [Environment variables](#environment-variables)
   - [Backends](#backends)
     - [Keychain](#keychain)
+    - [(Beta) Data Protection Keychain](#beta-data-protection-keychain)
+      - [Using the Data Protection Keychain](#using-the-data-protection-keychain)
+      - [Keychain Access Control](#keychain-access-control)
+        - [Combining Access Controls](#combining-access-controls)
+        - [Updating Access Control](#updating-access-control)
+      - [Keychain Access Constraint](#keychain-access-constraint)
+        - [Access Constraints](#access-constraints)
+      - [Limitations of the Data Protection Keychain](#limitations-of-the-data-protection-keychain)
   - [Managing credentials](#managing-credentials)
     - [Using multiple profiles](#using-multiple-profiles)
     - [Listing profiles and credentials](#listing-profiles-and-credentials)
     - [Removing credentials](#removing-credentials)
     - [Rotating credentials](#rotating-credentials)
+    - [Copying credentials](#copying-credentials)
   - [Managing Sessions](#managing-sessions)
     - [Executing a command](#executing-a-command)
     - [Logging into AWS console](#logging-into-aws-console)
@@ -45,7 +54,9 @@
   - [Shell completion](#shell-completion)
   - [Desktop apps](#desktop-apps)
   - [Docker](#docker)
-
+  - [Development](#development)
+    - [Developing with the Data Protection Keychain (i.e Touch ID)](#developing-with-the-data-protection-keychain-ie-touch-id)
+    - [Build Flow](#build-flow)
 
 ## Getting Help
 
@@ -308,6 +319,10 @@ To override or set the source identity (used in `exec` and `login`):
 
 You can choose among different pluggable secret storage backends. You can set the backend using the `--backend` flag or the `AWS_VAULT_BACKEND` environment variable. Run `aws-vault --help` to see what your `--backend` flag supports.
 
+There are two types of keychains in macOS:
+- File-based keychain (`keychain`) - default for `aws-vault`
+- Data Protection keychain (`dp-keychain`)
+
 ### Keychain
 
 If you're looking to configure the amount of time between having to enter your Keychain password for each usage of a particular profile, you can do so through Keychain:
@@ -320,6 +335,110 @@ If you're looking to configure the amount of time between having to enter your K
 
 ![keychain-image](https://imgur.com/ARkr5Ba.png)
 
+### (Beta) Data Protection Keychain
+
+Apple have stated the Data Protection keychain [is more secure](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains#API-differences) than the file-based keychain. And that whilst not offiical, the file-based keychain is [considered to be deprecated](https://developer.apple.com/documentation/technotes/tn3137-on-mac-keychains#API-differences:~:text=The%20file%2Dbased%20keychain%20is%20on%20the%20road%20to%20deprecation).
+
+The Data Protection keychain is encrypted with a key that is protected by the Secure Enclave, this is a hardware security feature of Apple devices. It means the keychain is only accessible when the device is unlocked and the user is authenticated.
+
+#### Using the Data Protection Keychain
+
+To keep backwards compatibility, the Data Protection Keychain is currently not the default backend. Instead a new backend `dp-keychain` has been created.
+
+To use the Data Protection Keychain, you can set the `AWS_VAULT_BACKEND` in your shell profile. For example, in your `~/.bash_profile` or `~/.zshrc`:
+
+```shell
+$ vim ~/.bash_profile or ~/.zshrc
+export AWS_VAULT_BACKEND=dp-keychain
+```
+
+It can also be used inline with the `--backend` flag:
+
+```shell
+$ aws-vault --backend=dp-keychain exec my-profile
+```
+
+#### Keychain Access Control
+
+The level of protection can be configured for the Data Protection Keychain. These values are based on the underlying [Security Control Flags](https://developer.apple.com/documentation/security/secaccesscontrolcreateflags) 
+
+The protection level can be set to one of the following:
+
+| Access Control (`AWS_VAULT_ACCESS_CONTROL`) | Authentication Method | Description |
+| --- | --- | --- |
+| `BiometryAny` | ✅ Touch ID<br>❌ User Password | The user can authenticate with currently enrolled fingerprints or facial data, plus any newly enrolled biometric data. |
+| `BiometryCurrentSet` | ✅ Touch ID<br>❌ User Password | The user can authenticate with currently enrolled fingerprints or facial data only. **New biometric data cannot be enrolled.** This is similar to how banking apps work on iOS. |
+| `UserPresence` | ✅ Touch ID<br>✅ User Password | The user can authenticate with fingerprint or facial data, or by entering the device passcode. New biometric data can be enrolled. |
+| `DevicePasscode` | ❌ Touch ID<br>✅ User Password | The user must authenticate with the device passcode. **Note: this is not recommended currently as you will need to enter your password to often** |
+| `Watch` | ❌ Touch ID<br>❌ User Password<br/>✅ Watch | The user must authenticate with the Apple Watch (running Watch OS 6 or later). |
+| `ApplicationPassword` | ❌ Touch ID<br>❌ User Password<br>✅ Application Password | This is a specific password that is set for the application. Similar to how `keychain` works on `aws-vault`. |
+
+The default protection level is `UserPresence`.
+
+To set the protection level it is suggested you set the `AWS_VAULT_ACCESS_CONTROL` environment variable in your shell profile. For example, in your `~/.bash_profile` or `~/.zshrc`:
+
+```shell
+$ vim ~/.bash_profile or ~/.zshrc
+export AWS_VAULT_ACCESS_CONTROL=BiometryAny
+```
+
+##### Combining Access Controls
+
+Access controls can be combined using `And` or `Or` to create more complex access controls. 
+
+**Require both Touch ID and a User Password:**
+
+```shell
+BiometryCurrentSetAndDevicePasscode
+```
+
+**Require User Password, Current Biometric data and Watch:**
+
+```shell
+BiometryCurrentSetAndWatchAndDevicePasscode
+```
+
+**To require either Touch ID or a Watch:**
+
+```shell
+BiometryCurrentSetOrWatch
+``` 
+
+##### Updating Access Control
+
+It's not currently possible to retrospectively change access control settings for existing items in a keychain. Therefore if you change the `AWS_VAULT_ACCESS_CONTROL` environment value, keep in mind only new items will use the new access control settings.
+
+The only option around this would be to [delete the profile](#removing-credentials) and re-add it.
+
+#### Keychain Access Constraint
+
+To set the keychain access constraint, you can set the `AWS_VAULT_ACCESS_CONSTRAINT` environment value in your shell profile.
+
+```shell
+export AWS_VAULT_ACCESS_CONSTRAINT=AccessibleWhenUnlocked
+```
+
+The default for this value is empty, which means the keychain access constraint is set to `AccessibleWhenUnlocked` as per the [Apple documentation](https://developer.apple.com/documentation/security/ksecattraccessiblewhenunlocked#:~:text=This%20is%20the%20default%20value%20for%20keychain%20items%20added%20without%20explicitly%20setting%20an%20accessibility%20constant.).
+
+Note: constraints are placed along with the access control settings. For example, `AccessibleWhenUnlocked` does not mean credentials can be accessed without authentication. It means the credentials can be retrieved via authentication when the device is unlocked.
+
+##### Access Constraints
+
+The keychain access constraint can be set to one of the following:
+
+| Access Constraint (`AWS_VAULT_ACCESS_CONSTRAINT`) | Description |
+| --- | --- |
+| `AccessibleWhenUnlocked` | Items with this attribute migrate to a new device when using encrypted backups. This is the `default value` for keychain items added without explicitly setting an accessibility constant. |
+| `AccessibleAfterFirstUnlock` | After the first unlock, the data remains accessible until the next restart. This is recommended for items that need to be accessed by background applications. Items with this attribute migrate to a new device when using encrypted backups. |
+| `AccessibleAfterFirstUnlockThisDeviceOnly` | After the first unlock, the data remains accessible until the next restart. This is recommended for items that need to be accessed by background applications. Items with this attribute do not migrate to a new device. Thus, after restoring from a backup of a different device, these items will not be present. |
+| `AccessibleWhenPasscodeSetThisDeviceOnly` | This is recommended for items that only need to be accessible while the application is in the foreground. Items with this attribute never migrate to a new device. After a backup is restored to a new device, these items are missing. No items can be stored in this class on devices without a passcode. Disabling the device passcode causes all items in this class to be deleted. |
+| `AccessibleWhenUnlockedThisDeviceOnly` | This is recommended for items that need to be accessible only while the application is in the foreground. Items with this attribute _do not_ migrate to a new device. Thus, after restoring from a backup of a different device, these items will not be present. |
+| `AccessibleAlways` | @deprecated use `AccessibleWhenUnlockedThisDeviceOnly` instead |
+| `AccessibleAccessibleAlwaysThisDeviceOnly` | @deprecated use `AccessibleWhenUnlockedThisDeviceOnly` instead |
+
+#### Limitations of the Data Protection Keychain
+
+Currently the Data Protection Keychain will prompt for biometrics every time you use `aws-vault`. There is no way to avoid this limitation. In saying that, Touch ID is incredibly fast so it outweighs the inconvenience of having to enter your password (every 5-10 mins when using the file-based keychain).
 
 ## Managing credentials
 
@@ -416,6 +535,16 @@ The minimal IAM policy required to rotate your own credentials is:
 }
 ```
 
+### Copying credentials
+
+The `aws-vault copy` command can be used to copy all credentials (and sessions) from one keychain to another.
+
+```shell
+# Copy AWS credentials/sessions from the "keychain" keychain to the "dp-keychain" keychain
+$ aws-vault copy keychain dp-keychain
+Copying credentials from keychain to dp-keychain
+Copied 1 credentials, 0 OIDC tokens, and 1 sessions.
+```
 
 ## Managing Sessions
 
@@ -743,3 +872,63 @@ To test it out:
    $ docker-compose run testapp
    testapp $ aws sts get-caller-identity
    ```
+
+## Development
+
+### Developing with the Data Protection Keychain (i.e Touch ID)
+
+To use the data protection keychain (`dp-keychain`) and touch ID the app bundled and signed each time, otherwise you will receive -34018 keychain error.
+
+- **Create a certificate**
+  - [Generate a CSR](https://developer.apple.com/help/account/create-certificates/create-a-certificate-signing-request)
+  - [Create a new certificate](https://developer.apple.com/account/resources/certificates/add)
+  - Select "Developer ID Application"
+
+- **Setup an App ID**
+  - **[Register a new identifier](https://developer.apple.com/account/resources/identifiers/add/bundleId)**
+  - Select "App IDs"
+  - Select "App"
+  - Description "`aws-vault`"
+  - Bundle ID "`com.99designs.aws-vault`" (explicit)
+
+- **Setup a Provisioning Profile**
+  - **[Create a Distribution Profile](https://developer.apple.com/account/resources/profiles/add)**
+  - Distribution "Developer ID"
+  - Select App ID: "`aws-vault`"
+  - Select Certificate
+  - Provisioning Profile Name: "`aws-vault`"
+  - Generate
+  - Save to aws-vault repo in `mac/aws-vault.app/Contents/embedded.provisionprofile`
+
+- **Setup environment**
+  - `APPLE_DEVELOPER_ID`:
+    - You can find your Developer  ID from [here](https://developer.apple.com/account#MembershipDetailsCard)) 
+    - Set it in `~/.zshrc` (or equivalent) i.e. `export APPLE_DEVELOPER_ID=NRM9HVJ62Z`
+    - Or just set it in shell `APPLE_DEVELOPER_ID=NRM9HVJ62Z make app`
+
+### Build Flow
+  
+To build the app, run `make app` you can then use the binary located in `./aws-vault.app/Contents/MacOS/aws-vault`.
+
+```shell
+$ make app
+(build details omitted)
+echo "Run at ./aws-vault.app/Contents/MacOS/aws-vault"
+Run at ./aws-vault.app/Contents/MacOS/aws-vault
+$ ./aws-vault.app/Contents/MacOS/aws-vault --backend=dp-keychain ls
+Profile                    Credentials              Sessions                                                      
+=======                    ===========              ========                                                      
+default                    -                        -       
+```
+
+These two functions could be come cumbersome whilst developing so you could merge them together
+
+```shell
+$ make app && ./aws-vault.app/Contents/MacOS/aws-vault --backend=dp-keychain ls
+(build details omitted)
+echo "Run at ./aws-vault.app/Contents/MacOS/aws-vault"
+Run at ./aws-vault.app/Contents/MacOS/aws-vault
+Profile                    Credentials              Sessions                                                      
+=======                    ===========              ========                                                      
+default                    -                        -      
+```

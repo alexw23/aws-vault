@@ -1,3 +1,6 @@
 /aws-vault
 /aws-vault-*
+/aws-vault.app
 /SHA256SUMS
+mac/aws-vault.app/Contents/*.provisionprofile
+mac/entitlements.plist

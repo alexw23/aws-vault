@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/99designs/aws-vault/v7/prompt"
@@ -30,10 +31,14 @@ type AwsVault struct {
 	KeyringConfig  keyring.Config
 	KeyringBackend string
 	promptDriver   string
+	accessControl  string
 
 	keyringImpl   keyring.Keyring
 	awsConfigFile *vault.ConfigFile
 }
+
+var accessControlOptions = []string{"UserPresence", "BiometryCurrentSet", "BiometryAnySet", "DevicePasscode", "Watch", "ApplicationPassword"}
+var accessConstraintOptions = []string{"", "AccessibleWhenUnlocked", "AccessibleAfterFirstUnlock", "AccessibleAfterFirstUnlockThisDeviceOnly", "AccessibleWhenPasscodeSetThisDeviceOnly", "AccessibleWhenUnlockedThisDeviceOnly"}
 
 func isATerminal() bool {
 	fd := os.Stdout.Fd()
@@ -94,16 +99,21 @@ func (a *AwsVault) MustGetProfileNames() []string {
 	return config.ProfileNames()
 }
 
+// Get available backends
+func (a *AwsVault) AvailableBackends() []string {
+	backendsAvailable := []string{}
+	for _, backendType := range keyring.AvailableBackends() {
+		backendsAvailable = append(backendsAvailable, string(backendType))
+	}
+	return backendsAvailable
+}
+
 func ConfigureGlobals(app *kingpin.Application) *AwsVault {
 	a := &AwsVault{
 		KeyringConfig: keyringConfigDefaults,
 	}
 
-	backendsAvailable := []string{}
-	for _, backendType := range keyring.AvailableBackends() {
-		backendsAvailable = append(backendsAvailable, string(backendType))
-	}
-
+	backendsAvailable := a.AvailableBackends()
 	promptsAvailable := prompt.Available()
 
 	app.Flag("debug", "Show debugging output").
@@ -162,6 +172,43 @@ func ConfigureGlobals(app *kingpin.Application) *AwsVault {
 		Envar("AWS_VAULT_FILE_DIR").
 		StringVar(&a.KeyringConfig.FileDir)
 
+	app.Flag("access-control", "Access Control Settings for the Data Protection Keychain \"dp-keychain\" backend").
+		Default("UserPresence").
+		Envar("AWS_VAULT_ACCESS_CONTROL").
+		StringVar(&a.accessControl)
+
+	app.Flag("access-constraint", "Access Control Settings for the Data Protection Keychain \"dp-keychain\" backend").
+		Default("").
+		Envar("AWS_VAULT_ACCESS_CONSTRAINT").
+		EnumVar(&a.KeyringConfig.KeychainAccessConstraint, accessConstraintOptions...)
+
+	app.Validate(func(app *kingpin.Application) error {
+		// Ensure that current keyring backend is supported
+		if a.KeyringBackend != "dp-keychain" && a.KeyringConfig.KeychainAccessConstraint != "" {
+			return fmt.Errorf("--access-control is not supported with the backend '%s', only 'dp-keychain' is supported", a.KeyringBackend)
+		}
+
+		if a.KeyringBackend != "dp-keychain" && a.accessControl != "UserPresence" {
+			return fmt.Errorf("--access-control is not supported with the backend '%s', only 'dp-keychain' is supported", a.KeyringBackend)
+		}
+
+		log.Printf("Using keyring backend: %s", a.KeyringBackend)
+		log.Printf("Using access control: %s", a.accessControl)
+
+		if a.KeyringConfig.KeychainAccessConstraint != "" {
+			log.Printf("Using access constraint: %s", a.KeyringConfig.KeychainAccessConstraint)
+		}
+
+		terms, err := validateAccessControls(a)
+		if err != nil {
+			return err
+		}
+
+		a.KeyringConfig.KeychainAccessControl = terms
+
+		return nil
+	})
+
 	app.PreAction(func(c *kingpin.ParseContext) error {
 		if !a.Debug {
 			log.SetOutput(io.Discard)
@@ -172,6 +219,44 @@ func ConfigureGlobals(app *kingpin.Application) *AwsVault {
 	})
 
 	return a
+}
+
+func validateAccessControls(a *AwsVault) ([]string, error) {
+	validTerms := accessControlOptions
+	validTermsPattern := strings.Join(validTerms, "|")
+
+	// Regex for checking structure
+	pattern := fmt.Sprintf(`^(%s)(?:\s*(And|Or)\s*(%s))*$`, validTermsPattern, validTermsPattern)
+	regex := regexp.MustCompile(pattern)
+
+	if !regex.MatchString(a.accessControl) {
+		return nil, fmt.Errorf("invalid access control setting: '%s'", a.accessControl)
+	}
+
+	// Split the string by 'And' or 'Or' to check for repeats
+	splitRegex := regexp.MustCompile(`\s*(And|Or)\s*`)
+	terms := splitRegex.Split(a.accessControl, -1)
+
+	// Map to track occurrences of terms
+	seen := make(map[string]bool)
+	for _, term := range terms {
+		normalizedTerm := strings.TrimSpace(term)
+		if seen[normalizedTerm] {
+			return nil, fmt.Errorf("repeated access control term: '%s'", normalizedTerm)
+		}
+		seen[normalizedTerm] = true
+	}
+
+	return terms, nil
+}
+
+func StringInSlice(str string, list []string) bool {
+	for _, v := range list {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 func fileKeyringPassphrasePrompt(prompt string) (string, error) {

@@ -33,7 +33,12 @@ require (
 	github.com/dvsekhvalnov/jose2go v1.5.0 // indirect
 	github.com/godbus/dbus v0.0.0-20190726142602-4481cbc300e2 // indirect
 	github.com/gsterjov/go-libsecret v0.0.0-20161001094733-a6f4afe4910c // indirect
+	github.com/keybase/go-keychain v0.0.0-20231219164618-57a3676c3af6 // indirect
 	github.com/mtibben/percent v0.2.1 // indirect
 	github.com/xhit/go-str2duration/v2 v2.1.0 // indirect
 	golang.org/x/sys v0.6.0 // indirect
 )
+
+replace github.com/99designs/keyring => github.com/alexw23/keyring v0.0.0-20240507145515-95e6dc96a98e
+
+replace github.com/keybase/go-keychain => github.com/alexw23/go-keychain v0.0.0-20240507145345-41efe171240e

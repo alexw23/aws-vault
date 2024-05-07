@@ -1,0 +1,30 @@
+#!/bin/bash
+
+set -euo pipefail
+
+BIN_PATH="$1"
+SRC_PATH="$2"
+APP_PATH=${APP_PATH:-"mac/aws-vault.app"}
+APPLE_DEVELOPER_ID="${APPLE_DEVELOPER_ID:-"NRM9HVJ62Z"}" ## 99designs Inc as default
+CERT_ID="${CERT_ID:-$APPLE_DEVELOPER_ID}"
+CERT_ID="${CERT_ID:-"Developer ID Application: 99designs Inc (NRM9HVJ62Z)"}"
+BUNDLE_ID="${BUNDLE_ID:-"com.99designs.aws-vault"}"
+
+if [ ! -f "$APP_PATH/Contents/embedded.provisionprofile" ]; then
+  echo "*.provisionprofile not found, please download profile from Apple Developer Portal and place it in $APP_PATH/Contents/embedded.provisionprofile"
+  exit 1
+fi
+
+if [[ ! -f "mac/entitlements.plist" ]] ; then
+  sed "s/APPLE_DEVELOPER_ID/$APPLE_DEVELOPER_ID/g" mac/entitlements.template.plist > mac/entitlements.plist
+fi
+
+echo "Building app bundle"
+cp -a $APP_PATH $SRC_PATH
+mkdir -p $SRC_PATH/Contents/MacOS
+cp -a $BIN_PATH $SRC_PATH/Contents/MacOS/aws-vault
+
+echo "App bundle built at $SRC_PATH"
+
+echo "Signing app"
+codesign --options runtime --deep --entitlements "mac/entitlements.plist" --timestamp --sign "$CERT_ID" "$SRC_PATH"

@@ -16,6 +16,7 @@ set -euo pipefail
 
 BIN_PATH="$1"
 DMG_PATH="${2:-$1.dmg}"
+CERT_ID="${CERT_ID:-$APPLE_DEVELOPER_ID}" # Apple accepts developer ID also for --sign
 CERT_ID="${CERT_ID:-"Developer ID Application: 99designs Inc (NRM9HVJ62Z)"}"
 KEYCHAIN_PROFILE="${KEYCHAIN_PROFILE:-AC_PASSWORD}"
 
@@ -27,11 +28,9 @@ fi
 tmpdir="$(mktemp -d)"
 trap "rm -rf $tmpdir" EXIT
 
-cp -a $BIN_PATH $tmpdir/aws-vault
-src_path="$tmpdir/aws-vault"
+src_path="$tmpdir/aws-vault.app"
 
-echo "Signing binary"
-codesign --options runtime --timestamp --sign "$CERT_ID" "$src_path"
+./bin/bundle-app "$BIN_PATH" "$src_path"
 
 echo "Creating dmg"
 hdiutil create -quiet -srcfolder "$src_path" "$DMG_PATH"

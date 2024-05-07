@@ -2,7 +2,9 @@ VERSION=$(shell git describe --tags --candidates=1 --dirty)
 BUILD_FLAGS=-ldflags="-X main.Version=$(VERSION)" -trimpath
 CERT_ID ?= Developer ID Application: 99designs Inc (NRM9HVJ62Z)
 SRC=$(shell find . -name '*.go') go.mod
+ARCH=$(shell uname -m)
 INSTALL_DIR ?= ~/bin
+APP_PATH ?= ./aws-vault.app
 .PHONY: binaries clean release install
 
 ifeq ($(shell uname), Darwin)
@@ -24,6 +26,11 @@ dmgs: aws-vault-darwin-amd64.dmg aws-vault-darwin-arm64.dmg
 
 clean:
 	rm -f ./aws-vault ./aws-vault-*-* ./SHA256SUMS
+	rm -rf $(APP_PATH)
+
+app: clean aws-vault-darwin-$(ARCH)
+	./bin/bundle-app aws-vault-darwin-$(ARCH) $(APP_PATH)
+	echo "Run at $(APP_PATH)/Contents/MacOS/aws-vault"
 
 release: binaries dmgs SHA256SUMS
 
